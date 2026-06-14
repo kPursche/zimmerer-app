@@ -12,7 +12,7 @@
 
 | ID | Feature | Status | Spec | Created |
 |----|---------|--------|------|---------|
-| PROJ-1 | Onboarding-Formular für Animations-Briefings | Planned | [Spec](PROJ-1-animation-onboarding-form.md) | 2026-06-14 |
+| PROJ-1 | Onboarding-Formular für Animations-Briefings | In Progress | [Spec](PROJ-1-animation-onboarding-form.md) | 2026-06-14 |
 
 <!-- Add features above this line -->
 

@@ -1,6 +1,6 @@
 # PROJ-1: Onboarding-Formular für Animations-Briefings
 
-## Status: Planned
+## Status: In Progress
 **Created:** 2026-06-14
 **Last Updated:** 2026-06-14
 
@@ -103,7 +103,77 @@ Eine öffentlich per Link teilbare Web-Formular-Seite, über die Kunden alle Inf
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Überblick (in einem Satz)
+Eine öffentlich erreichbare Formular-Seite nimmt das Briefing entgegen, lädt die Dateien sicher in den Supabase-Speicher hoch und speichert alle Antworten in einer Datenbank-Tabelle – ohne dass sich der Kunde einloggen muss.
+
+### A) Seiten- & Komponentenstruktur
+```
+/briefing  (öffentliche Seite, ein Link zum Teilen)
++-- Kopfbereich (Titel + kurze Erklärung, was den Kunden erwartet)
++-- Briefing-Formular (ein Formular, in 7 Abschnitte gegliedert)
+|   +-- Abschnitt 1: Auftraggeber / Kontakt
+|   +-- Abschnitt 2: Produkt-Basics
+|   +-- Abschnitt 3: Wirkung & Inhaltsstoffe
+|   +-- Abschnitt 4: Zielgruppe & Tonalität
+|   +-- Abschnitt 5: Umfang & Format
+|   +-- Abschnitt 6: Visuals & Assets (mit Datei-Upload)
+|   +-- Abschnitt 7: Rahmenbedingungen
+|   +-- DSGVO-Einwilligung (Checkbox) + Absenden-Button
++-- Zustände: Laden / Fehler / Erfolg
++-- Bestätigungsansicht (nach erfolgreichem Absenden)
+
+/briefing/danke  (Bestätigungsseite – „Briefing erhalten")
+```
+Hinweis: Alle Eingabe-Elemente kommen aus den bereits vorhandenen shadcn/ui-Bausteinen (Formular, Eingabefeld, Textfeld, Auswahl, Optionsfelder, Checkbox, Button, Karte, Fortschrittsanzeige, Benachrichtigung). Es werden **keine** UI-Grundbausteine neu gebaut – nur eine fachliche Zusammenstellung für dieses Formular.
+
+### B) Datenmodell (in einfacher Sprache)
+**Jedes eingereichte Briefing speichert:**
+- Eine eindeutige ID und einen Eingangs-Zeitstempel
+- *Kontakt:* Firma/Marke, Ansprechpartner, E-Mail, Telefon, Links
+- *Produkt:* Produktname, Kategorie, Darreichungsform, Kurzbeschreibung
+- *Wirkung:* Inhaltsstoffe, Wirkmechanismus, Wirkungsorte im Körper, Top-3-Vorteile, verbotene Health-Claims
+- *Zielgruppe:* Beschreibung, gelöstes Problem, gewünschte Tonalität
+- *Umfang:* Auftragsart (Einzelvideo/Kampagne), Länge, Seitenverhältnisse/Plattformen, Voiceover ja/nein, Text-Overlays, Musik-Stil, Sprache(n)
+- *Visuals:* Verweise (Pfade) auf hochgeladene Produktfotos, Logo, Referenz-/Markenrichtlinien-Dateien, Brand-Farben, Brand-Schriften, Referenz-Links
+- *Rahmen:* Deadline, Budget, Call-to-Action, Anmerkungen
+- *Einwilligung:* DSGVO-Zustimmung (ja + Zeitpunkt)
+
+**Wo wird gespeichert?**
+- **Antworten (Text/Auswahl):** eine Datenbank-Tabelle `animation_briefings` in Supabase (Postgres).
+- **Dateien (Fotos/Logo/Referenzen):** Supabase Storage-Bucket `briefing-uploads`. In der Tabelle stehen nur die Verweise (Pfade) auf die Dateien, nicht die Dateien selbst.
+
+**Warum Datenbank statt Browser-Speicher?**
+Die Briefings müssen dich (den Produzenten) erreichen und dauerhaft verfügbar sein – das geht nur server­seitig. Browser-Speicher (localStorage) würde nur auf dem Gerät des Kunden bleiben.
+
+### C) Ablauf einer Einreichung (was wann passiert)
+1. Kunde füllt das Formular aus; Eingaben werden direkt im Browser auf Vollständigkeit/Format geprüft (sofortiges Feedback).
+2. Beim Absenden werden zuerst die Dateien in den Storage-Bucket hochgeladen (mit Fortschrittsanzeige), dann die Antworten gespeichert.
+3. Die Antworten werden **zusätzlich auf dem Server erneut geprüft** (doppelte Sicherheit), bevor sie in die Datenbank geschrieben werden.
+4. Bei Erfolg → Weiterleitung zur Bestätigungsseite. Bei Fehler → klare Meldung, eingegebene Daten bleiben erhalten.
+
+### D) Zugriff & Sicherheit (einfach erklärt)
+- Das Formular ist **öffentlich** (kein Login). Erlaubt ist daher nur **Einreichen** (Schreiben) – niemand kann über das Formular fremde Briefings lesen.
+- Das **Lesen** der Briefings bleibt dir vorbehalten (über die geschützte Supabase-Verwaltung; eine Kunden-Leseansicht ist Non-Goal im MVP).
+- Datei-Uploads werden auf **erlaubte Typen** (Bilder; bei Referenzen auch Dokumente) und **maximale Größe** begrenzt.
+- Einfacher Spam-Schutz (verstecktes Honeypot-Feld) ist optional vorgesehen.
+- Sicherheitszeile zur Datenbank: Row Level Security ist aktiv, sodass öffentliche Nutzer ausschließlich neue Einträge anlegen, aber nichts auslesen können.
+
+### E) Technische Entscheidungen (kurz begründet)
+- **Next.js App Router + Server-Route fürs Absenden:** trennt das öffentliche Formular sauber von der Speicher-Logik und erlaubt die serverseitige Nachprüfung.
+- **shadcn/ui + react-hook-form + Zod:** vorhandener Standard im Projekt; ein Validierungsschema gilt sowohl im Browser als auch auf dem Server (eine Wahrheit, weniger Fehler).
+- **Supabase Storage für Dateien, Postgres für Antworten:** Dateien gehören nicht in eine Datenbankzelle; Verweise verknüpfen beides sauber.
+
+### F) Benötigte Pakete / Voraussetzungen
+- `@supabase/supabase-js` – bereits installiert (Supabase-Client muss in `src/lib/supabase.ts` aktiviert werden).
+- `react-hook-form` + `@hookform/resolvers` + `zod` – Formular & Validierung (prüfen/installieren).
+- Neue Umgebungsvariablen: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (und serverseitiger Service-Key fürs geschützte Schreiben) – in `.env.local.example` zu dokumentieren.
+- Supabase-Einrichtung (im `/backend`-Schritt): Tabelle `animation_briefings`, Storage-Bucket `briefing-uploads`, RLS-Policy „nur Einfügen für öffentliche Rolle".
+
+### Offene Annahmen (bestätigt im Requirements-Schritt, hier festgehalten)
+- Kein Login; Formular per öffentlichem Link.
+- Mindestens 1 Produktfoto ist Pflicht.
+- Auswahlwerte (Kategorien, Tonalitäten etc.) sind anpassbare Defaults.
 
 ## QA Test Results
 _To be added by /qa_
